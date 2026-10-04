@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本地 Display-P3 LUT 色彩校样</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>本地 Display-P3 LUT 色彩校样</h1>
+    <p class="notice">
+      所有计算均在本页面内完成；不读取 ICC，也不声称模拟任何真实印刷设备。
+      LUT 仅表示抽象的线性 Display-P3 RGB 到线性 Display-P3 RGB 映射。
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="panel controls-panel">
+      <h2>1. 输入八位 RGBA 网格</h2>
+      <p class="help">
+        JSON：<code>width</code>、<code>height</code> 为 1–128；<code>data</code> 为自左上角、
+        按行排列的非预乘 RGBA 字节。
+      </p>
+      <textarea id="gridInput" spellcheck="false"></textarea>
+      <div class="row">
+        <label class="file-button">
+          载入网格 JSON
+          <input id="gridFile" type="file" accept=".json,application/json">
+        </label>
+        <button id="sampleGridBtn" type="button">恢复示例网格</button>
+      </div>
+
+      <h2>2. 5×5×5 线性 Display-P3 LUT</h2>
+      <p class="help">
+        固定轴顺序：<strong>R 最快、G 居中、B 最慢</strong>；索引
+        <code>((b*5+g)*5+r)</code>。表项必须是 [0,1] 内有限数。
+      </p>
+      <textarea id="lutInput" spellcheck="false"></textarea>
+      <div class="row wrap">
+        <label class="file-button">
+          载入 LUT JSON
+          <input id="lutFile" type="file" accept=".json,application/json">
+        </label>
+        <button id="identityLutBtn" type="button">恒等 LUT</button>
+        <button id="swapLutBtn" type="button">R/G 轴交换</button>
+        <button id="p3RedLutBtn" type="button">P3 红色压力</button>
+      </div>
+
+      <h2>3. 背景与视图</h2>
+      <div class="row wrap">
+        <label>背景（八位 sRGB）
+          <input id="bgColor" type="color" value="#888888">
+        </label>
+        <label class="checkbox">
+          <input id="markerToggle" type="checkbox" checked>
+          高亮合成前越界像素
+        </label>
+      </div>
+      <div class="row wrap">
+        <button id="applyBtn" type="button">应用参数并校样</button>
+        <button id="downloadBtn" type="button">下载 CPU 结果 PNG</button>
+      </div>
+      <div class="row wrap">
+        <button id="loseBtn" type="button">模拟 GPU 上下文丢失</button>
+        <button id="restoreBtn" type="button">恢复 GPU 上下文</button>
+      </div>
+      <div id="validation" class="status" role="status"></div>
+      <div id="diffStatus" class="status" role="status"></div>
+    </section>
+
+    <section class="panel preview-panel">
+      <h2>预览（WebGL2 着色路径）</h2>
+      <div id="gpuShell" class="gpu-shell" data-state="ready">
+        <canvas id="previewCanvas" width="128" height="128" aria-label="处理后的像素网格"></canvas>
+        <canvas id="markerCanvas" width="128" height="128"></canvas>
+        <div class="gpu-overlay" hidden>
+          <div>
+            <strong>GPU 预览不可用</strong>
+            <span data-message></span>
+          </div>
+        </div>
+      </div>
+      <p class="legend"><span class="swatch"></span>青色：合成前线性 sRGB 分量 &lt;0 或 &gt;1；最终结果仍按要求硬裁断。</p>
+
+      <h2>内置测试</h2>
+      <div class="row wrap">
+        <button id="runTestsBtn" type="button">运行 CPU / WebGL2 / 上下文恢复测试</button>
+      </div>
+      <div id="testResults" class="test-results" aria-live="polite">尚未运行。</div>
+    </section>
+
+    <section class="panel inspector-panel">
+      <h2>逐阶段像素检查</h2>
+      <div class="row wrap">
+        <label>X <input id="pixelX" type="number" min="0" value="0"></label>
+        <label>Y <input id="pixelY" type="number" min="0" value="0"></label>
+        <button id="pixelBtn" type="button">查看</button>
+      </div>
+      <p class="help">点击或触摸预览图也可选择像素。透明像素仍会执行 LUT，并可在合成前被标记为越界；只是最终颜色由 alpha 合成决定。</p>
+      <div id="inspector"></div>
+    </section>
+  </main>
+
+  <script src="proof.js"></script>
+  <script src="app.js"></script>
+  <script src="tests.js"></script>
+</body>
+</html>
