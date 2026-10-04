@@ -1,0 +1,1699 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本地 Display-P3 LUT 色彩校样</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --ink: #17202a;
+    --muted: #5d6b78;
+    --line: #d7dde3;
+    --accent: #0b63ce;
+    --bad: #b00020;
+    --good: #147a3c;
+    --warn: #9a6700;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", sans-serif;
+  }
+  header {
+    padding: 18px 22px 12px;
+    background: #102033;
+    color: #fff;
+  }
+  header h1 { margin: 0 0 6px; font-size: 20px; }
+  header p { margin: 0; color: #c8d4e0; max-width: 980px; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(360px, 470px) minmax(420px, 1fr);
+    gap: 14px;
+    padding: 14px;
+    align-items:start;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+  }
+  label { display:block; margin: 8px 0 4px; font-weight: 600; }
+  textarea, input[type="text"] {
+    width: 100%;
+    font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  textarea { height: 150px; resize: vertical; }
+  input[type="color"] { width: 58px; height: 34px; padding: 2px; }
+  button {
+    appearance: none;
+    border: 1px solid #0a4ea2;
+    background: var(--accent);
+    color: white;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin: 4px 4px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button.secondary {
+    background: #fff;
+    color: var(--accent);
+  }
+  button.danger { background: var(--bad); border-color: #8a0018; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display:flex; align-items:center; gap: 10px; flex-wrap:wrap; }
+  .spaced { margin-top: 10px; }
+  .muted { color: var(--muted); }
+  .status {
+    margin-top: 8px;
+    padding: 7px 9px;
+    border-radius: 6px;
+    white-space: pre-wrap;
+  }
+  .status.ok { background:#e8f5ee; color:var(--good); }
+  .status.error { background:#fdebed; color:var(--bad); }
+  .status.warn { background:#fff6da; color:var(--warn); }
+  .status.info { background:#eaf3ff; color:#084b9b; }
+  .canvas-shell {
+    position: relative;
+    width: min(560px, 100%);
+    margin: 8px 0;
+    border: 1px solid #303943;
+    background:
+      repeating-conic-gradient(#d9dee3 0 25%, #f4f6f8 0 50%) 0 0/16px 16px;
+  }
+  #previewCanvas, #markerOverlay {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+  }
+  #markerOverlay {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+  }
+  .canvas-shell[data-lost="true"]::after {
+    content: "GPU 预览不可用：WebGL2 上下文已丢失，旧预览已清除。CPU 参考处理与下载仍可使用。";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    background: rgba(18, 22, 27, .97);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; margin: 6px 0; }
+  .swatch {
+    display:inline-block;
+    width: 13px;
+    height: 13px;
+    margin-right: 4px;
+    vertical-align:-2px;
+    border:1px solid #555;
+  }
+  .swatch.oob {
+    background:
+      repeating-linear-gradient(45deg, rgba(255,0,0,.85) 0 3px, rgba(255,255,0,.85) 3px 6px);
+  }
+  table.inspector {
+    border-collapse: collapse;
+    width: 100%;
+    font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  table.inspector th, table.inspector td {
+    border: 1px solid var(--line);
+    padding: 4px 6px;
+    vertical-align: top;
+  }
+  table.inspector th {
+    background: #eef2f6;
+    text-align: left;
+  }
+  .num { text-align: right; white-space: nowrap; }
+  .flag { color: var(--bad); font-weight: 700; }
+  .okText { color: var(--good); font-weight: 700; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+  #testOutput {
+    font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    background: #0f151c;
+    color: #d7e2ee;
+    border-radius: 6px;
+    padding: 9px;
+    max-height: 260px;
+    overflow:auto;
+  }
+  .small { font-size: 11px; }
+  code {
+    background: #eef2f6;
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>浏览器本地 Display-P3 5×5×5 LUT 色彩校样</h1>
+  <p>
+    固定参考路径：八位 sRGB 解码 → 线性 sRGB 转线性 Display-P3 → 逐分量裁入 LUT 域 →
+    四面体插值 → 转回线性 sRGB → 与八位 sRGB 不透明背景做非预乘 alpha 合成 →
+    最终线性值裁入 [0,1]、编码并 round 到八位。页面只做显式矩阵数学；不读取 ICC，
+    也不声称模拟任何真实印刷设备。
+  </p>
+</header>
+
+<main>
+<section>
+  <div class="panel">
+    <h2>1. 输入网格（非预乘八位 RGBA，最大 128×128）</h2>
+    <textarea id="gridInput" spellcheck="false"></textarea>
+    <div class="row spaced">
+      <button id="applyGrid">应用网格</button>
+      <button id="defaultGrid" class="secondary">默认渐变透明网格</button>
+    </div>
+    <div id="gridStatus" class="status muted">尚未应用。</div>
+  </div>
+
+  <div class="panel">
+    <h2>2. 5×5×5 线性 Display-P3 LUT</h2>
+    <p class="muted small">
+      JSON 中 <code>data</code> 为 375 个有限数，范围 [0,1]，RGB 交替。
+      固定轴顺序：<b>R 最快、G 次之、B 最慢</b>，平坦索引为
+      <code>((b*5+g)*5+r)*3</code>。
+    </p>
+    <textarea id="lutInput" spellcheck="false"></textarea>
+    <div class="row spaced">
+      <button id="applyLut">应用 LUT</button>
+      <button id="identityLut" class="secondary">恒等</button>
+      <button id="swapLut" class="secondary">R↔G 轴交换</button>
+      <button id="redLut" class="secondary">P3 红/负分量</button>
+      <button id="randomLut" class="secondary">随机 LUT</button>
+    </div>
+    <div id="lutStatus" class="status muted">尚未应用。</div>
+  </div>
+
+  <div class="panel">
+    <h2>3. 背景与处理</h2>
+    <div class="row">
+      <label for="bgColor" style="margin:0">八位 sRGB 背景</label>
+      <input id="bgColor" type="color" value="#808080">
+      <span id="bgBytes" class="mono small"></span>
+    </div>
+    <div class="row spaced">
+      <button id="process">重新处理</button>
+      <label class="small" style="display:flex;align-items:center;gap:5px;margin:0">
+        <input id="showMarkers" type="checkbox" checked> 标出合成前出界像素
+      </label>
+    </div>
+    <div class="row spaced">
+      <button id="downloadPng">下载处理 PNG</button>
+      <button id="downloadReport" class="secondary">下载逐阶段 JSON</button>
+    </div>
+    <div id="processStatus" class="status muted">等待处理。</div>
+  </div>
+
+  <div class="panel">
+    <h2>4. WebGL2 上下文与测试</h2>
+    <div id="glStatus" class="status"></div>
+    <div class="row spaced">
+      <button id="loseContext" class="danger">模拟上下文丢失</button>
+      <button id="restoreContext" class="secondary">恢复上下文</button>
+      <button id="runTests" class="secondary">运行内置测试</button>
+    </div>
+    <details open>
+      <summary>测试输出</summary>
+      <div id="testOutput" class="spaced">尚未运行。</div>
+    </details>
+  </div>
+</section>
+
+<section>
+  <div class="panel">
+    <h2>GPU 预览（WebGL2 着色路径）</h2>
+    <div class="legend small">
+      <span><span class="swatch oob"></span>合成前线性 sRGB 出界</span>
+      <span><span class="swatch" style="background:#00e5ff"></span>当前选中像素</span>
+    </div>
+    <div id="canvasShell" class="canvas-shell">
+      <canvas id="previewCanvas" width="1" height="1"></canvas>
+      <canvas id="markerOverlay" width="1" height="1"></canvas>
+    </div>
+    <canvas id="glCanvas" class="hidden" width="1" height="1"></canvas>
+    <div id="diffStatus" class="status muted">尚无 GPU/CPU 比较。</div>
+    <p class="muted small">
+      出界标记来自“LUT 输出转换回线性 sRGB 之后、alpha 合成之前”。透明像素仍执行颜色管线；
+      若其颜色出界，即使最终合成结果受背景主导也会标记。
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>像素检查器</h2>
+    <div id="inspector" class="muted">点击预览中的像素查看逐阶段数值。</div>
+  </div>
+</section>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * 常量、矩阵与传输函数
+ * ============================================================ */
+
+const LUT_SIZE = 5;
+const LUT_SCALE = LUT_SIZE - 1;
+const GAMUT_EPS = 1e-6;
+
+// 行主序矩阵：线性 sRGB -> 线性 Display-P3
+const M_SRGB_TO_P3 = [
+  [0.8224620478, 0.1775379609, 0.0],
+  [0.0341726258, 0.9432513255, 0.0225760634],
+  [0.0170827321, 0.0678329883, 0.9150843300]
+];
+
+// 行主序矩阵：线性 Display-P3 -> 线性 sRGB
+const M_P3_TO_SRGB = [
+  [ 1.2249401164, -0.2249401107,  0.0],
+  [-0.0420569588,  1.0420569304,  0.0],
+  [-0.0196375553, -0.0786360554,  1.0982735375]
+];
+
+const TETRA_ORDERS = [
+  [0, 1, 2], // 0: R >= G >= B，含 R=G=B
+  [0, 2, 1], // 1: R >= B >= G，含 R=B>G
+  [1, 0, 2], // 2: G >= R >= B，含 G=R>B
+  [1, 2, 0], // 3: G >= B >= R，含 G=B>R
+  [2, 0, 1], // 4: B >= R >= G，含 B=R>G
+  [2, 1, 0]  // 5: B >= G >= R，含 B=G>R
+];
+
+const TETRA_NAMES = [
+  'R→G→B', 'R→B→G', 'G→R→B',
+  'G→B→R', 'B→R→G', 'B→G→R'
+];
+
+function clamp(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
+function clamp01(v) { return clamp(v, 0, 1); }
+function fround(v) { return Math.fround(v); }
+
+function matVec3(m, v) {
+  return [
+    m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+    m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]
+  ];
+}
+
+// sRGB EOTF，参数是 [0,1] 编码值
+function srgbDecodeChannel(c) {
+  return c <= 0.04045
+    ? c / 12.92
+    : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+// 线性 sRGB -> sRGB 编码值；不在这里裁负值
+function srgbEncodeChannel(c) {
+  if (c <= 0.0031308) return 12.92 * c;
+  return 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+function encodeByte(c) {
+  return clamp(Math.round(srgbEncodeChannel(clamp01(c)) * 255), 0, 255);
+}
+
+function bytesToLinear(bytes) {
+  return bytes.map(v => srgbDecodeChannel(v / 255));
+}
+
+/* ============================================================
+ * LUT、四面体插值（CPU 参考路径）
+ * ============================================================ */
+
+function lutIndex(r, g, b) {
+  return ((b * LUT_SIZE + g) * LUT_SIZE + r) * 3;
+}
+
+function fetchLut(lut, r, g, b) {
+  const i = lutIndex(r, g, b);
+  return [lut[i], lut[i + 1], lut[i + 2]];
+}
+
+// 相等分量裁决：R 优先于 G，G 优先于 B。
+// 0/1/2 分别代表 R/G/B。
+function tetraCase(f) {
+  const r = f[0], g = f[1], b = f[2];
+  if (r >= g && g >= b) return 0;
+  if (r >= b && b >= g) return 1;
+  if (g >= r && r >= b) return 2;
+  if (g >= b && b >= r) return 3;
+  if (b >= r && r >= g) return 4;
+  return 5;
+}
+
+function channelValue(v, axis) {
+  if (axis === 0) return v[0];
+  if (axis === 1) return v[1];
+  return v[2];
+}
+
+function axisBit(axis) {
+  return 1 << axis;
+}
+
+function tetraWeights(f, order) {
+  const d1 = channelValue(f, order[0]);
+  const d2 = channelValue(f, order[1]);
+  const d3 = channelValue(f, order[2]);
+  return [1 - d1, d1 - d2, d2 - d3, d3];
+}
+
+function tetraCornerMasks(order) {
+  return [
+    0,
+    axisBit(order[0]),
+    axisBit(order[0]) | axisBit(order[1]),
+    axisBit(0) | axisBit(1) | axisBit(2)
+  ];
+}
+
+// p 是线性 P3 三通道；先逐分量裁到 [0,1]，再进入 LUT。
+function tetraSampleLut(lut, p) {
+  const t = [clamp01(p[0]), clamp01(p[1]), clamp01(p[2])];
+  const q = t.map(v => v * LUT_SCALE);
+  const base = q.map(v => Math.min(LUT_SIZE - 2, Math.floor(v)));
+  const f = q.map((v, i) => v - base[i]);
+  const caseId = tetraCase(f);
+  const order = TETRA_ORDERS[caseId];
+  const weights = tetraWeights(f, order);
+  const masks = tetraCornerMasks(order);
+
+  const out = [0, 0, 0];
+  for (let k = 0; k < 4; ++k) {
+    const corner = [
+      base[0] + ((masks[k] & 1) ? 1 : 0),
+      base[1] + ((masks[k] & 2) ? 1 : 0),
+      base[2] + ((masks[k] & 4) ? 1 : 0)
+    ];
+    const value = fetchLut(lut, corner[0], corner[1], corner[2]);
+    for (let c = 0; c < 3; ++c) out[c] += weights[k] * value[c];
+  }
+  return { value: out, base, f, caseId, weights, masks };
+}
+
+function isOutOfSrgbGamut(linear) {
+  return linear.some(v => v < -GAMUT_EPS || v > 1 + GAMUT_EPS);
+}
+
+/* ============================================================
+ * CPU 完整路径
+ * ============================================================ */
+
+function processGrid(grid, lut, bgBytes) {
+  const n = grid.width * grid.height;
+  const output = new Uint8ClampedArray(n * 4);
+  const mask = new Uint8Array(n);
+
+  const stages = {
+    encodedInput: new Float64Array(n * 3),
+    linearSrgb: new Float64Array(n * 3),
+    linearP3: new Float64Array(n * 3),
+    clampedP3: new Float64Array(n * 3),
+    lutP3: new Float64Array(n * 3),
+    backSrgb: new Float64Array(n * 3),
+    composited: new Float64Array(n * 3),
+    encodedOut: new Float64Array(n * 3),
+    cell: new Uint8Array(n * 3),
+    fraction: new Float64Array(n * 3),
+    weights: new Float64Array(n * 4),
+    cornerMasks: new Uint8Array(n * 4),
+    tetraCase: new Uint8Array(n)
+  };
+
+  const bgLinear = bytesToLinear(bgBytes);
+
+  for (let p = 0; p < n; ++p) {
+    const i3 = p * 3;
+    const i4 = p * 4;
+
+    const encodedIn = [
+      grid.data[i4] / 255,
+      grid.data[i4 + 1] / 255,
+      grid.data[i4 + 2] / 255
+    ];
+    const linear = encodedIn.map(srgbDecodeChannel);
+    const p3 = matVec3(M_SRGB_TO_P3, linear);
+    const p3Clamped = p3.map(clamp01);
+    const sample = tetraSampleLut(lut, p3Clamped);
+    const back = matVec3(M_P3_TO_SRGB, sample.value);
+    const oob = isOutOfSrgbGamut(back);
+    const alpha = grid.data[i4 + 3] / 255;
+    const composite = [
+      back[0] * alpha + bgLinear[0] * (1 - alpha),
+      back[1] * alpha + bgLinear[1] * (1 - alpha),
+      back[2] * alpha + bgLinear[2] * (1 - alpha)
+    ];
+    // 最终线性值先裁到可编码范围；未裁剪的合成值保留在 composited 阶段用于解释差异。
+    const finalLinear = composite.map(clamp01);
+    const encodedOut = finalLinear.map(srgbEncodeChannel);
+    const bytesOut = encodedOut.map(c => clamp(Math.round(c * 255), 0, 255));
+
+    stages.encodedInput.set(encodedIn, i3);
+    stages.linearSrgb.set(linear, i3);
+    stages.linearP3.set(p3, i3);
+    stages.clampedP3.set(p3Clamped, i3);
+    stages.lutP3.set(sample.value, i3);
+    stages.backSrgb.set(back, i3);
+    stages.composited.set(composite, i3);
+    stages.encodedOut.set(encodedOut, i3);
+    stages.cell.set(sample.base, i3);
+    stages.fraction.set(sample.f, i3);
+    stages.weights.set(sample.weights, p * 4);
+    stages.cornerMasks.set(sample.masks, p * 4);
+    stages.tetraCase[p] = sample.caseId;
+
+    output[i4] = bytesOut[0];
+    output[i4 + 1] = bytesOut[1];
+    output[i4 + 2] = bytesOut[2];
+    output[i4 + 3] = 255;
+    mask[p] = oob ? 1 : 0;
+  }
+
+  return { output, mask, stages, bgLinear, width: grid.width, height: grid.height };
+}
+
+/* ============================================================
+ * 默认数据、解析器与 LUT 生成器
+ * ============================================================ */
+
+function makeDefaultGrid() {
+  const width = 8, height = 8;
+  const data = new Uint8ClampedArray(width * height * 4);
+  const colors = [
+    [255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0],
+    [0, 255, 255], [255, 0, 255], [255, 255, 255], [0, 0, 0]
+  ];
+  for (let y = 0; y < height; ++y) {
+    const a = clamp(Math.round(y * 255 / (height - 1)), 0, 255);
+    for (let x = 0; x < width; ++x) {
+      const i = (y * width + x) * 4;
+      data[i] = colors[x][0];
+      data[i + 1] = colors[x][1];
+      data[i + 2] = colors[x][2];
+      data[i + 3] = a;
+    }
+  }
+  return { width, height, data };
+}
+
+function makeIdentityLut() {
+  const data = new Float32Array(LUT_SIZE ** 3 * 3);
+  for (let b = 0; b < LUT_SIZE; ++b) {
+    for (let g = 0; g < LUT_SIZE; ++g) {
+      for (let r = 0; r < LUT_SIZE; ++r) {
+        const i = lutIndex(r, g, b);
+        data[i] = fround(r / LUT_SCALE);
+        data[i + 1] = fround(g / LUT_SCALE);
+        data[i + 2] = fround(b / LUT_SCALE);
+      }
+    }
+  }
+  return data;
+}
+
+function makeAxisSwapLut() {
+  const data = new Float32Array(LUT_SIZE ** 3 * 3);
+  for (let b = 0; b < LUT_SIZE; ++b) {
+    for (let g = 0; g < LUT_SIZE; ++g) {
+      for (let r = 0; r < LUT_SIZE; ++r) {
+        const i = lutIndex(r, g, b);
+        // LUT 输出轴交换：输入轴 (R,G,B) 被映射成 (G,R,B)
+        data[i] = fround(g / LUT_SCALE);
+        data[i + 1] = fround(r / LUT_SCALE);
+        data[i + 2] = fround(b / LUT_SCALE);
+      }
+    }
+  }
+  return data;
+}
+
+function makeConstantRedP3Lut() {
+  const data = new Float32Array(LUT_SIZE ** 3 * 3);
+  for (let i = 0; i < data.length; i += 3) {
+    data[i] = 1;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+  }
+  return data;
+}
+
+function mulberry32(seed) {
+  return function() {
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeRandomLut(seed = 12345) {
+  const rnd = mulberry32(seed);
+  const data = new Float32Array(LUT_SIZE ** 3 * 3);
+  for (let i = 0; i < data.length; ++i) data[i] = fround(rnd());
+  return data;
+}
+
+function lutToJson(lut) {
+  return JSON.stringify({
+    size: 5,
+    colorSpace: 'linear-display-p3',
+    axisOrder: 'R-fastest, G, B-slowest',
+    data: Array.from(lut)
+  }, null, 2);
+}
+
+function gridToJson(grid) {
+  return JSON.stringify({
+    width: grid.width,
+    height: grid.height,
+    colorSpace: 'srgb-8bit',
+    unpremultiplied: true,
+    data: Array.from(grid.data)
+  }, null, 2);
+}
+
+function parseGrid(text) {
+  const obj = JSON.parse(text);
+  if (!Number.isInteger(obj.width) || !Number.isInteger(obj.height)) {
+    throw new Error('width 和 height 必须是整数。');
+  }
+  if (obj.width < 1 || obj.height < 1 || obj.width > 128 || obj.height > 128) {
+    throw new Error('宽高必须位于 1..128。');
+  }
+  if (!Array.isArray(obj.data) || obj.data.length !== obj.width * obj.height * 4) {
+    throw new Error(`data 长度必须为 ${obj.width * obj.height * 4}（RGBA 交替）。`);
+  }
+  const data = new Uint8ClampedArray(obj.data.length);
+  for (let i = 0; i < obj.data.length; ++i) {
+    const v = obj.data[i];
+    if (typeof v !== 'number' || !Number.isFinite(v) || !Number.isInteger(v) || v < 0 || v > 255) {
+      throw new Error(`data[${i}] 不是 0..255 的整数。`);
+    }
+    data[i] = v;
+  }
+  return { width: obj.width, height: obj.height, data };
+}
+
+function parseLut(text) {
+  const obj = JSON.parse(text);
+  const size = obj.size === undefined ? 5 : obj.size;
+  if (size !== 5) throw new Error('此参考实现仅接受 5×5×5 LUT。');
+  if (obj.axisOrder && obj.axisOrder !== 'R-fastest, G, B-slowest') {
+    throw new Error('轴顺序必须是 R-fastest, G, B-slowest；请先在外部重排数据。');
+  }
+  let raw = obj.data;
+  if (Array.isArray(raw) && Array.isArray(raw[0])) raw = raw.flat();
+  if (!Array.isArray(raw) || raw.length !== 375) {
+    throw new Error('LUT data 必须包含 375 个数（125 个 RGB 表项）。');
+  }
+  const data = new Float32Array(375);
+  for (let i = 0; i < 375; ++i) {
+    const v = raw[i];
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      throw new Error(`LUT data[${i}] 不是有限数。`);
+    }
+    if (v < 0 || v > 1) throw new Error(`LUT data[${i}]=${v} 超出 [0,1]。`);
+    data[i] = fround(v);
+  }
+  return data;
+}
+
+function hexToBytes(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function bytesToHex(b) {
+  return '#' + b.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+/* ============================================================
+ * WebGL2 路径
+ * ============================================================ */
+
+const VERT_SRC = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FRAG_SRC = `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform usampler2D uGrid;
+uniform usampler3D uLut;
+uniform vec3 uBgEncoded;
+uniform ivec2 uSize;
+
+out uvec4 outColor;
+
+const float GAMUT_EPS = 1e-6;
+
+/* 列主序构造；每一列是输入通道对输出 R/G/B 的系数 */
+const mat3 TO_P3 = mat3(
+  0.8224620478, 0.0341726258, 0.0170827321,
+  0.1775379609, 0.9432513255, 0.0678329883,
+  0.0,          0.0225760634, 0.9150843300
+);
+const mat3 TO_SRGB = mat3(
+   1.2249401164, -0.0420569588, -0.0196375553,
+  -0.2249401107,  1.0420569304, -0.0786360554,
+   0.0,           0.0,           1.0982735375
+);
+
+vec3 srgbDecode(vec3 c) {
+  vec3 a = c / 12.92;
+  vec3 b = pow((c + 0.055) / 1.055, vec3(2.4));
+  return mix(b, a, lessThanEqual(c, vec3(0.04045)));
+}
+
+vec3 srgbEncode(vec3 c) {
+  vec3 a = 12.92 * c;
+  vec3 b = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+  return mix(b, a, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 lutAt(ivec3 p) {
+  uvec4 bits = texelFetch(uLut, p, 0);
+  return vec3(
+    uintBitsToFloat(bits.x),
+    uintBitsToFloat(bits.y),
+    uintBitsToFloat(bits.z)
+  );
+}
+
+ivec3 axisVector(int a) {
+  if (a == 0) return ivec3(1, 0, 0);
+  if (a == 1) return ivec3(0, 1, 0);
+  return ivec3(0, 0, 1);
+}
+
+int tetraCase(vec3 f) {
+  if (f.r >= f.g && f.g >= f.b) return 0;
+  if (f.r >= f.b && f.b >= f.g) return 1;
+  if (f.g >= f.r && f.r >= f.b) return 2;
+  if (f.g >= f.b && f.b >= f.r) return 3;
+  if (f.b >= f.r && f.r >= f.g) return 4;
+  return 5;
+}
+
+void orderAxes(int id, out int a, out int b, out int c) {
+  if (id == 0) { a = 0; b = 1; c = 2; return; }
+  if (id == 1) { a = 0; b = 2; c = 1; return; }
+  if (id == 2) { a = 1; b = 0; c = 2; return; }
+  if (id == 3) { a = 1; b = 2; c = 0; return; }
+  if (id == 4) { a = 2; b = 0; c = 1; return; }
+  a = 2; b = 1; c = 0;
+}
+
+float channel(vec3 v, int a) {
+  if (a == 0) return v.r;
+  if (a == 1) return v.g;
+  return v.b;
+}
+
+vec3 tetraLut(vec3 p3) {
+  vec3 t = clamp(p3, vec3(0.0), vec3(1.0));
+  vec3 q = t * 4.0;
+  ivec3 base = ivec3(floor(q));
+  base = min(base, ivec3(3));
+  vec3 f = q - vec3(base);
+
+  int id = tetraCase(f);
+  int o0, o1, o2;
+  orderAxes(id, o0, o1, o2);
+
+  vec3 v0 = lutAt(base);
+  vec3 v1 = lutAt(base + axisVector(o0));
+  vec3 v2 = lutAt(base + axisVector(o0) + axisVector(o1));
+  vec3 v3 = lutAt(base + ivec3(1));
+
+  float d1 = channel(f, o0);
+  float d2 = channel(f, o1);
+  float d3 = channel(f, o2);
+  float w0 = 1.0 - d1;
+  float w1 = d1 - d2;
+  float w2 = d2 - d3;
+  float w3 = d3;
+  return v0 * w0 + v1 * w1 + v2 * w2 + v3 * w3;
+}
+
+void main() {
+  ivec2 sizeMinus = uSize - ivec2(1);
+  ivec2 uv = ivec2(int(gl_FragCoord.x), uSize.y - int(gl_FragCoord.y) - 1);
+  uvec4 src = texelFetch(uGrid, uv, 0);
+
+  vec3 encodedIn = vec3(src.rgb) / 255.0;
+  vec3 linearSrgb = srgbDecode(encodedIn);
+  vec3 linearP3 = TO_P3 * linearSrgb;
+  vec3 clampedP3 = clamp(linearP3, vec3(0.0), vec3(1.0));
+  vec3 lutP3 = tetraLut(clampedP3);
+  vec3 backSrgb = TO_SRGB * lutP3;
+
+  bool oob =
+    any(lessThan(backSrgb, vec3(-GAMUT_EPS))) ||
+    any(greaterThan(backSrgb, vec3(1.0 + GAMUT_EPS)));
+
+  float alpha = float(src.a) / 255.0;
+  vec3 bgLinear = srgbDecode(uBgEncoded);
+  vec3 composited = backSrgb * alpha + bgLinear * (1.0 - alpha);
+  vec3 clipped = clamp(composited, vec3(0.0), vec3(1.0));
+  vec3 encodedOut = srgbEncode(clipped);
+  uvec3 bytesOut = uvec3(clamp(round(encodedOut * 255.0), vec3(0.0), vec3(255.0)));
+  outColor = uvec4(bytesOut, oob ? 255u : 0u);
+}`;
+
+class WebGLProofRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.lost = false;
+    this.initError = null;
+    this.program = null;
+    this.gl = null;
+
+    const gl = canvas.getContext('webgl2', {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance'
+    });
+    if (!gl) return;
+    this.gl = gl;
+
+    canvas.addEventListener('webglcontextlost', event => {
+      event.preventDefault();
+      this.lost = true;
+      this.program = null;
+      if (this.onlost) this.onlost();
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.lost = false;
+      try {
+        this.program = this.createProgram();
+        if (this.onrestored) this.onrestored();
+      } catch (err) {
+        this.initError = err.message || String(err);
+        this.gl = null;
+        if (this.onlost) this.onlost();
+      }
+    });
+
+    try {
+      this.program = this.createProgram();
+    } catch (err) {
+      this.initError = err.message || String(err);
+      this.gl = null;
+    }
+  }
+
+  get available() { return !!this.gl && !this.lost; }
+
+  compileShader(type, source) {
+    const gl = this.gl;
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new Error(log);
+    }
+    return shader;
+  }
+
+  createProgram() {
+    const gl = this.gl;
+    const vert = this.compileShader(gl.VERTEX_SHADER, VERT_SRC);
+    const frag = this.compileShader(gl.FRAGMENT_SHADER, FRAG_SRC);
+    const program = gl.createProgram();
+    gl.attachShader(program, vert);
+    gl.attachShader(program, frag);
+    gl.linkProgram(program);
+    gl.deleteShader(vert);
+    gl.deleteShader(frag);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(program);
+      gl.deleteProgram(program);
+      throw new Error(log);
+    }
+    return program;
+  }
+
+  packLut(lut) {
+    const packed = new Uint32Array(125 * 4);
+    const scratch = new Float32Array(1);
+    const bits = new Uint32Array(scratch.buffer);
+    for (let i = 0; i < 125; ++i) {
+      scratch[0] = lut[i * 3];     packed[i * 4] = bits[0];
+      scratch[0] = lut[i * 3 + 1]; packed[i * 4 + 1] = bits[0];
+      scratch[0] = lut[i * 3 + 2]; packed[i * 4 + 2] = bits[0];
+      scratch[0] = 1;               packed[i * 4 + 3] = bits[0];
+    }
+    return packed;
+  }
+
+  render(grid, lut, bgBytes) {
+    if (!this.available) return null;
+    const gl = this.gl;
+    const w = grid.width, h = grid.height;
+
+    if (!this.program) this.program = this.createProgram();
+
+    this.canvas.width = w;
+    this.canvas.height = h;
+    gl.viewport(0, 0, w, h);
+
+    const inputTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, inputTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA8UI, w, h, 0,
+      gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, new Uint8Array(grid.data.buffer)
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const lutTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, lutTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage3D(
+      gl.TEXTURE_3D, 0, gl.RGBA32UI, 5, 5, 5, 0,
+      gl.RGBA_INTEGER, gl.UNSIGNED_INT, this.packLut(lut)
+    );
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+
+    // 输出纹理不能仍绑定在采样器单元上，否则形成采样/附件反馈回路。
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, null);
+
+    const outTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, outTex);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA8UI, w, h, 0,
+      gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, null
+    );
+
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D, outTex, 0
+    );
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error('WebGL2 整数帧缓冲不完整。');
+    }
+
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, inputTex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, lutTex);
+    gl.useProgram(this.program);
+    gl.uniform1i(gl.getUniformLocation(this.program, 'uGrid'), 0);
+    gl.uniform1i(gl.getUniformLocation(this.program, 'uLut'), 1);
+    gl.uniform3f(
+      gl.getUniformLocation(this.program, 'uBgEncoded'),
+      bgBytes[0] / 255, bgBytes[1] / 255, bgBytes[2] / 255
+    );
+    gl.uniform2i(gl.getUniformLocation(this.program, 'uSize'), w, h);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    const raw = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, raw);
+
+    // readPixels 的第一行是帧缓冲底部；转换为输入 JSON 使用的顶行顺序。
+    const topDown = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; ++y) {
+      const srcStart = (h - 1 - y) * w * 4;
+      topDown.set(raw.subarray(srcStart, srcStart + w * 4), y * w * 4);
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo);
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(lutTex);
+    gl.deleteTexture(outTex);
+
+    return { data: topDown, width: w, height: h };
+  }
+
+  loseExtension() {
+    return this.gl ? this.gl.getExtension('WEBGL_lose_context') : null;
+  }
+  lose() { const e = this.loseExtension(); if (e) e.loseContext(); return !!e; }
+  restore() { const e = this.loseExtension(); if (e) e.restoreContext(); return !!e; }
+}
+
+/* ============================================================
+ * 应用状态与 UI
+ * ============================================================ */
+
+const $ = id => document.getElementById(id);
+const els = {
+  gridInput: $('gridInput'), lutInput: $('lutInput'),
+  gridStatus: $('gridStatus'), lutStatus: $('lutStatus'),
+  processStatus: $('processStatus'), glStatus: $('glStatus'),
+  diffStatus: $('diffStatus'), testOutput: $('testOutput'),
+  bgColor: $('bgColor'), bgBytes: $('bgBytes'),
+  preview: $('previewCanvas'), overlay: $('markerOverlay'),
+  shell: $('canvasShell'), glCanvas: $('glCanvas'),
+  inspector: $('inspector'), showMarkers: $('showMarkers'),
+  restore: $('restoreContext'), lose: $('loseContext')
+};
+
+const state = {
+  grid: makeDefaultGrid(),
+  lut: makeIdentityLut(),
+  bg: hexToBytes('#808080'),
+  result: null,
+  gpu: null,
+  selected: null
+};
+
+const renderer = new WebGLProofRenderer(els.glCanvas);
+
+function setStatus(node, message, kind = '') {
+  node.textContent = message;
+  node.className = 'status ' + kind;
+}
+function fmt(v, digits = 6) {
+  if (!Number.isFinite(v)) return String(v);
+  const s = v.toFixed(digits);
+  return s === '-0.000000' ? '0.000000' : s;
+}
+function rgb3(a, digits = 6) {
+  return `(${a.map(v => fmt(v, digits)).join(', ')})`;
+}
+function bytes3(a) { return `(${a[0]}, ${a[1]}, ${a[2]})`; }
+
+function makeMarkerTile() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 8;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, 8, 8);
+  ctx.fillStyle = 'rgba(255,0,0,.34)';
+  ctx.fillRect(0, 0, 8, 8);
+  ctx.strokeStyle = 'rgba(255,255,0,.95)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-2, 10); ctx.lineTo(10, -2);
+  ctx.moveTo(2, 10); ctx.lineTo(10, 2);
+  ctx.moveTo(-2, 6); ctx.lineTo(6, -2);
+  ctx.stroke();
+  return c;
+}
+const markerTile = makeMarkerTile();
+
+function clearPreview() {
+  els.preview.width = 1;
+  els.preview.height = 1;
+  els.overlay.width = 1;
+  els.overlay.height = 1;
+  els.shell.style.aspectRatio = '';
+}
+
+function drawPreview() {
+  const gpu = state.gpu;
+  const result = state.result;
+  if (!gpu || !result) return;
+
+  const w = result.width, h = result.height;
+  els.preview.width = w;
+  els.preview.height = h;
+  els.overlay.width = w;
+  els.overlay.height = h;
+  els.shell.style.aspectRatio = `${w} / ${h}`;
+
+  const pctx = els.preview.getContext('2d');
+  pctx.imageSmoothingEnabled = false;
+  const image = new ImageData(new Uint8ClampedArray(gpu.data), w, h);
+  pctx.putImageData(image, 0, 0);
+  drawOverlay();
+}
+
+function drawOverlay() {
+  const result = state.result;
+  if (!result) return;
+  const w = result.width, h = result.height;
+  const ctx = els.overlay.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.imageSmoothingEnabled = false;
+
+  if (els.showMarkers.checked) {
+    for (let y = 0; y < h; ++y) {
+      for (let x = 0; x < w; ++x) {
+        const p = y * w + x;
+        if (result.mask[p]) ctx.drawImage(markerTile, x, y, 1, 1);
+      }
+    }
+  }
+
+  if (state.selected) {
+    const { x, y } = state.selected;
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = Math.max(0.08, 1 / Math.max(w, h) * 4);
+    ctx.strokeRect(x + .08, y + .08, .84, .84);
+    ctx.beginPath();
+    ctx.moveTo(x + .5, -0.5); ctx.lineTo(x + .5, y - 1.5);
+    ctx.moveTo(x + .5, y + 2.5); ctx.lineTo(x + .5, h + .5);
+    ctx.moveTo(-.5, y + .5); ctx.lineTo(x - 1.5, y + .5);
+    ctx.moveTo(x + 2.5, y + .5); ctx.lineTo(w + .5, y + .5);
+    ctx.stroke();
+  }
+}
+
+function compareCpuGpu() {
+  const cpu = state.result, gpu = state.gpu;
+  if (!cpu || !gpu) return null;
+  let max = 0, rgbMismatch = 0, maskMismatch = 0;
+  const n = cpu.width * cpu.height;
+  for (let p = 0; p < n; ++p) {
+    const i = p * 4;
+    for (let c = 0; c < 3; ++c) {
+      const d = Math.abs(cpu.output[i + c] - gpu.data[i + c]);
+      if (d > 0) ++rgbMismatch;
+      if (d > max) max = d;
+    }
+    const gm = gpu.data[i + 3] ? 1 : 0;
+    if (cpu.mask[p] !== gm) ++maskMismatch;
+  }
+  return { max, rgbMismatch, maskMismatch, pixels: n };
+}
+
+function renderDiffStatus() {
+  const d = compareCpuGpu();
+  if (!d) {
+    setStatus(els.diffStatus, '尚无 GPU/CPU 比较。', '');
+    return;
+  }
+  if (d.max <= 1 && d.maskMismatch === 0) {
+    setStatus(
+      els.diffStatus,
+      `GPU/CPU 一致性：通过。${d.pixels} 个像素；每通道最大差 ${d.max} 级；` +
+      `${d.rgbMismatch} 个非零通道差；出界标记不一致 ${d.maskMismatch} 个。`,
+      'ok'
+    );
+  } else {
+    setStatus(
+      els.diffStatus,
+      `失败：每通道最大差 ${d.max} 级，出界标记不一致 ${d.maskMismatch} 个。`,
+      'error'
+    );
+  }
+}
+
+function stageRow(name, value, note = '') {
+  return `<tr><th>${name}</th><td class="num">${value}</td><td>${note}</td></tr>`;
+}
+
+function updateInspector() {
+  if (!state.selected || !state.result) {
+    els.inspector.className = 'muted';
+    els.inspector.textContent = '点击预览中的像素查看逐阶段数值。';
+    return;
+  }
+  const { x, y } = state.selected;
+  const result = state.result;
+  const w = result.width, h = result.height;
+  if (x < 0 || y < 0 || x >= w || y >= h) return;
+  const p = y * w + x, i3 = p * 3, i4 = p * 4, iw = p * 4;
+  const s = result.stages;
+  const inBytes = [state.grid.data[i4], state.grid.data[i4+1], state.grid.data[i4+2], state.grid.data[i4+3]];
+  const outBytes = [result.output[i4], result.output[i4+1], result.output[i4+2]];
+  const caseId = s.tetraCase[p];
+  const weights = [s.weights[iw], s.weights[iw+1], s.weights[iw+2], s.weights[iw+3]];
+  const masks = [s.cornerMasks[iw], s.cornerMasks[iw+1], s.cornerMasks[iw+2], s.cornerMasks[iw+3]];
+  const cell = [s.cell[i3], s.cell[i3+1], s.cell[i3+2]];
+  const frac = [s.fraction[i3], s.fraction[i3+1], s.fraction[i3+2]];
+  const back = [s.backSrgb[i3], s.backSrgb[i3+1], s.backSrgb[i3+2]];
+  const cornerDescriptions = masks.map(mask => {
+    const corner = [
+      cell[0] + (mask & 1),
+      cell[1] + ((mask & 2) ? 1 : 0),
+      cell[2] + ((mask & 4) ? 1 : 0)
+    ];
+    const value = fetchLut(state.lut, corner[0], corner[1], corner[2]);
+    return `${corner.join(',')}:${rgb3(value, 6)}`;
+  });
+  const oob = result.mask[p] === 1;
+  const offenders = ['R','G','B'].filter((_, c) => back[c] < -GAMUT_EPS || back[c] > 1 + GAMUT_EPS);
+
+  let gpuBlock = '<p class="muted">GPU 预览不可用。</p>';
+  if (state.gpu) {
+    const gbytes = [state.gpu.data[i4], state.gpu.data[i4+1], state.gpu.data[i4+2]];
+    const deltas = gbytes.map((v, c) => Math.abs(v - outBytes[c]));
+    gpuBlock = `<table class="inspector">
+      <tr><th>GPU 输出字节</th><td class="num">${bytes3(gbytes)}</td><td></td></tr>
+      <tr><th>CPU-GPU 每通道差</th><td class="num">(${deltas.join(', ')})</td><td>单位：1/255 级</td></tr>
+      <tr><th>GPU 出界</th><td>${state.gpu.data[i4+3] ? '<span class="flag">是</span>' : '<span class="okText">否</span>'}</td><td></td></tr>
+    </table>`;
+  }
+
+  els.inspector.className = '';
+  els.inspector.innerHTML = `
+    <p><b>像素 (x=${x}, y=${y})</b>，线性索引 ${p}；输入 RGBA = (${inBytes.join(', ')})</p>
+    <table class="inspector">
+      ${stageRow('0. 输入 sRGB 编码', rgb3([s.encodedInput[i3], s.encodedInput[i3+1], s.encodedInput[i3+2]]), '字节除以 255')}
+      ${stageRow('1. 解码线性 sRGB', rgb3([s.linearSrgb[i3], s.linearSrgb[i3+1], s.linearSrgb[i3+2]]), 'sRGB EOTF')}
+      ${stageRow('2. 转换到线性 P3', rgb3([s.linearP3[i3], s.linearP3[i3+1], s.linearP3[i3+2]]), '固定矩阵；此处可能因舍入略高于 1')}
+      ${stageRow('3. 裁入 LUT 域', rgb3([s.clampedP3[i3], s.clampedP3[i3+1], s.clampedP3[i3+2]]), '逐分量 clamp 到 [0,1]')}
+      ${stageRow('4. LUT 单元格', `(${cell.join(', ')})`, '5×5×5 中左下角索引；上边界使用 cell 3 + fraction 1')}
+      ${stageRow('   单元内分数', rgb3(frac), `四面体次序：<b>${TETRA_NAMES[caseId]}</b>（编号 ${caseId}）`)}
+      ${stageRow('   四角权重', `(${weights.map(v => fmt(v, 8)).join(', ')})`, `角掩码：${masks.map(m => '0b' + m.toString(2).padStart(3,'0')).join(', ')}`)}
+      ${stageRow('   四角 LUT RGB', cornerDescriptions.join('<br>'), '坐标 (R,G,B) 与线性 P3 RGB')}
+      ${stageRow('5. LUT 输出线性 P3', rgb3([s.lutP3[i3], s.lutP3[i3+1], s.lutP3[i3+2]]), '四角权重的线性组合')}
+      ${stageRow('6. 转回线性 sRGB', rgb3(back), oob ? `<span class="flag">合成前出界：${offenders.join(', ')}</span>` : '<span class="okText">位于 sRGB 色域</span>')}
+      ${stageRow('背景线性 sRGB', rgb3(result.bgLinear), `背景字节 ${bytes3(state.bg)}；不经过 LUT`)}
+      ${stageRow('7. alpha 合成（线性）', rgb3([s.composited[i3], s.composited[i3+1], s.composited[i3+2]]), `alpha=${inBytes[3]}/255；非预乘 over 背景`)}
+      ${stageRow('8. 最终线性（裁到 [0,1]）', rgb3([s.composited[i3], s.composited[i3+1], s.composited[i3+2]].map(clamp01)), '裁前线性值见第 7 步')}
+      ${stageRow('9. sRGB 编码', rgb3([s.encodedOut[i3], s.encodedOut[i3+1], s.encodedOut[i3+2]]), '对第 8 步裁剪后的线性值编码；随后 round 到 0..255')}
+      ${stageRow('<b>CPU 输出字节</b>', `<b>${bytes3(outBytes)}</b>`, 'Alpha 因不透明背景而为 255')}
+    </table>
+    ${gpuBlock}
+    <p class="small muted">
+      出界只由第 6 步决定，不受第 7 步 alpha 合成影响。负分量通常来自 P3 中无法用线性 sRGB 非负值表示的颜色。
+    </p>`;
+}
+
+function runProcessor(reason = 'manual') {
+  if (!state.grid || !state.lut) return;
+  let gpuError = null;
+  state.result = processGrid(state.grid, state.lut, state.bg);
+  try {
+    state.gpu = renderer.available ? renderer.render(state.grid, state.lut, state.bg) : null;
+  } catch (err) {
+    state.gpu = null;
+    gpuError = err.message || String(err);
+  }
+
+  if (renderer.available && state.gpu) {
+    els.shell.dataset.lost = 'false';
+    els.shell.title = '';
+    drawPreview();
+  } else {
+    showPreviewUnavailable(gpuError
+      ? `GPU 预览不可用：${gpuError}。CPU 参考处理与下载仍可使用。`
+      : renderer.lost
+        ? 'GPU 预览不可用：WebGL2 上下文已丢失，旧预览已清除。CPU 参考处理与下载仍可使用。'
+        : '当前浏览器未提供可用 WebGL2；仅显示 CPU 参考状态。');
+  }
+
+  renderDiffStatus();
+  updateInspector();
+  const oobCount = state.result.mask.reduce((a, v) => a + v, 0);
+  setStatus(
+    els.processStatus,
+    gpuError
+      ? `CPU 已处理 ${state.result.width}×${state.result.height}；${oobCount} 个像素在合成前出界。GPU 错误：${gpuError}`
+      : `已处理 ${state.result.width}×${state.result.height}（原因：${reason}）；${oobCount} 个像素在合成前出界。`,
+    gpuError ? 'warn' : 'ok'
+  );
+}
+
+function showPreviewUnavailable(message) {
+  clearPreview();
+  els.shell.dataset.lost = 'true';
+  // CSS 伪元素承载主要提示；同时给辅助/旧浏览器一个状态。
+  els.shell.title = message;
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 100);
+}
+
+function downloadPng() {
+  if (!state.result) return;
+  const { width, height, output } = state.result;
+  const c = document.createElement('canvas');
+  c.width = width; c.height = height;
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(output), width, height), 0, 0);
+  c.toBlob(blob => downloadBlob(blob, 'p3-lut-proof-result.png'), 'image/png');
+}
+
+function downloadReport() {
+  if (!state.result) return;
+  const r = state.result;
+  const s = r.stages;
+  const outOfGamut = [];
+  for (let p = 0; p < r.mask.length; ++p) if (r.mask[p]) outOfGamut.push([p % r.width, Math.floor(p / r.width)]);
+  const report = {
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      pipeline: [
+        'decode 8-bit sRGB',
+        'linear sRGB to linear Display-P3',
+        'per-channel clamp into [0,1] LUT domain',
+        '5x5x5 tetrahedral interpolation',
+        'linear Display-P3 to linear sRGB',
+        'non-premultiplied alpha composite over opaque 8-bit sRGB background',
+        'clamp final linear RGB into [0,1]',
+        'sRGB encode and round to 8-bit'
+      ],
+      matrices: { srgbToLinearP3: M_SRGB_TO_P3, linearP3ToSrgb: M_P3_TO_SRGB },
+      lutAxisOrder: 'R-fastest, G, B-slowest',
+      tetraTieRule: 'R before G before B',
+      gamutEpsilon: GAMUT_EPS,
+      iccUsed: false,
+      hardProofSimulationClaimed: false,
+      backgroundSrgb8: state.bg,
+      width: r.width,
+      height: r.height,
+      outOfGamutPixels: outOfGamut
+    },
+    outputRgba8: Array.from(r.output),
+    stages: {
+      encodedInput: Array.from(s.encodedInput),
+      linearSrgb: Array.from(s.linearSrgb),
+      linearP3: Array.from(s.linearP3),
+      clampedP3: Array.from(s.clampedP3),
+      lutP3: Array.from(s.lutP3),
+      backSrgb: Array.from(s.backSrgb),
+      composited: Array.from(s.composited),
+      encodedOut: Array.from(s.encodedOut),
+      tetraCase: Array.from(s.tetraCase)
+    }
+  };
+  const blob = new Blob([JSON.stringify(report)], { type: 'application/json' });
+  downloadBlob(blob, 'p3-lut-proof-report.json');
+}
+
+/* ============================================================
+ * UI 事件
+ * ============================================================ */
+
+function applyGrid() {
+  try {
+    state.grid = parseGrid(els.gridInput.value);
+    state.selected = null;
+    setStatus(els.gridStatus, `网格已应用：${state.grid.width}×${state.grid.height}。`, 'ok');
+    runProcessor('grid changed');
+  } catch (err) {
+    setStatus(els.gridStatus, '网格错误：' + err.message, 'error');
+  }
+}
+
+function applyLut() {
+  try {
+    state.lut = parseLut(els.lutInput.value);
+    setStatus(els.lutStatus, 'LUT 已应用：125 个线性 Display-P3 RGB 表项。', 'ok');
+    runProcessor('LUT changed');
+  } catch (err) {
+    setStatus(els.lutStatus, 'LUT 错误：' + err.message, 'error');
+  }
+}
+
+function updateBg() {
+  state.bg = hexToBytes(els.bgColor.value);
+  els.bgBytes.textContent = `RGB ${bytes3(state.bg)}`;
+  runProcessor('background changed');
+}
+
+els.applyGrid.addEventListener('click', applyGrid);
+els.applyLut.addEventListener('click', applyLut);
+els.process.addEventListener('click', () => runProcessor('manual rerun'));
+els.bgColor.addEventListener('input', updateBg);
+els.showMarkers.addEventListener('change', drawOverlay);
+els.downloadPng.addEventListener('click', downloadPng);
+els.downloadReport.addEventListener('click', downloadReport);
+
+els.defaultGrid.addEventListener('click', () => {
+  els.gridInput.value = gridToJson(makeDefaultGrid());
+  applyGrid();
+});
+els.identityLut.addEventListener('click', () => {
+  els.lutInput.value = lutToJson(makeIdentityLut());
+  applyLut();
+});
+els.swapLut.addEventListener('click', () => {
+  els.lutInput.value = lutToJson(makeAxisSwapLut());
+  applyLut();
+});
+els.redLut.addEventListener('click', () => {
+  els.lutInput.value = lutToJson(makeConstantRedP3Lut());
+  applyLut();
+});
+els.randomLut.addEventListener('click', () => {
+  els.lutInput.value = lutToJson(makeRandomLut((Math.random() * 1e9) | 0));
+  applyLut();
+});
+
+els.overlay.addEventListener('click', event => {
+  if (!state.result) return;
+  const rect = els.overlay.getBoundingClientRect();
+  const x = Math.floor((event.clientX - rect.left) / rect.width * state.result.width);
+  const y = Math.floor((event.clientY - rect.top) / rect.height * state.result.height);
+  if (x < 0 || y < 0 || x >= state.result.width || y >= state.result.height) return;
+  state.selected = { x, y };
+  drawOverlay();
+  updateInspector();
+});
+
+renderer.onlost = () => {
+  state.gpu = null;
+  showPreviewUnavailable('GPU 预览不可用：WebGL2 上下文已丢失，旧预览已清除。');
+  setStatus(els.glStatus, 'WebGL2 上下文已丢失；CPU 参考路径仍可运行。', 'error');
+  setStatus(els.diffStatus, '上下文丢失：没有当前 GPU/CPU 比较。', 'warn');
+  updateInspector();
+};
+renderer.onrestored = () => {
+  setStatus(els.glStatus, 'WebGL2 上下文已恢复；正在使用当前参数重建 GPU 资源和预览。', 'ok');
+  runProcessor('context restored');
+};
+
+els.lose.addEventListener('click', () => {
+  if (!renderer.lose()) {
+    setStatus(els.glStatus, '浏览器未提供 WEBGL_lose_context 测试扩展。', 'error');
+  }
+});
+els.restore.addEventListener('click', () => {
+  if (!renderer.restore()) {
+    setStatus(els.glStatus, '浏览器未提供 WEBGL_lose_context 测试扩展。', 'error');
+  }
+});
+
+function initGlStatus() {
+  if (!renderer.gl) {
+    setStatus(
+      els.glStatus,
+      renderer.initError
+        ? `WebGL2 着色器初始化失败：${renderer.initError}；本页将只运行 CPU 参考路径。`
+        : 'WebGL2 不可用；本页将只运行 CPU 参考路径。',
+      'error'
+    );
+    els.lose.disabled = els.restore.disabled = true;
+    showPreviewUnavailable('当前浏览器未提供可用 WebGL2。');
+  } else {
+    setStatus(els.glStatus, 'WebGL2 可用；LUT 以 RGBA32UI 3D 纹理传入，输出为 RGBA8UI 帧缓冲。', 'ok');
+  }
+}
+
+/* ============================================================
+ * 内置测试
+ * ============================================================ */
+
+function createTestSuite() {
+  const lines = [];
+  let passed = 0, failed = 0, skipped = 0;
+  function log(msg) { lines.push(msg); }
+  async function test(name, fn) {
+    try { await fn(); ++passed; log('  PASS  ' + name); }
+    catch (err) { ++failed; log('  FAIL  ' + name + '\n        ' + (err.stack || err.message || err)); }
+  }
+  function skip(name, reason) { ++skipped; log('  SKIP  ' + name + '（' + reason + '）'); }
+  function assert(cond, msg) { if (!cond) throw new Error(msg); }
+  function approx(a, b, eps = 1e-5) { assert(Math.abs(a - b) <= eps, `${a} !~ ${b}, eps=${eps}`); }
+  function nextEvent(target, name) {
+    return new Promise(resolve => target.addEventListener(name, resolve, { once: true }));
+  }
+
+  function randomGrid(w, h, seed) {
+    const rnd = mulberry32(seed);
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < data.length; ++i) data[i] = Math.floor(rnd() * 256);
+    return { width: w, height: h, data };
+  }
+  function scalarCornerLut() {
+    const lut = new Float32Array(375);
+    for (let b = 0; b < 5; ++b) {
+      for (let g = 0; g < 5; ++g) {
+        for (let r = 0; r < 5; ++r) {
+          const mask = (r ? 1 : 0) | (g ? 2 : 0) | (b ? 4 : 0);
+          const i = lutIndex(r, g, b);
+          const v = fround(mask / 7);
+          lut[i] = lut[i + 1] = lut[i + 2] = v;
+        }
+      }
+    }
+    return lut;
+  }
+
+  async function run() {
+    log('Display-P3 校样内置测试 ' + new Date().toISOString());
+
+    await test('sRGB 传输函数与矩阵往返', () => {
+      [0, 0.003, 0.04045, 0.5, 1].forEach(v => {
+        approx(srgbEncodeChannel(srgbDecodeChannel(v)), v, 2e-7);
+      });
+      const v = [0.2, 0.7, 0.1];
+      const rt = matVec3(M_P3_TO_SRGB, matVec3(M_SRGB_TO_P3, v));
+      rt.forEach((x, i) => approx(x, v[i], 2e-6));
+      assert(encodeByte(0) === 0 && encodeByte(1) === 255, '八位端点错误');
+    });
+
+    await test('LUT 平坦轴顺序与 R/G 轴交换', () => {
+      assert(lutIndex(1, 2, 3) === ((3 * 5 + 2) * 5 + 1) * 3, 'R-fastest 索引错误');
+      const id = makeIdentityLut();
+      const s = tetraSampleLut(id, [0.125, 0.375, 0.625]);
+      s.value.forEach((v, i) => approx(v, [0.125,0.375,0.625][i], 2e-7));
+      const swapped = makeAxisSwapLut();
+      const q = tetraSampleLut(swapped, [0.1, 0.2, 0.3]);
+      approx(q.value[0], 0.2, 2e-7);
+      approx(q.value[1], 0.1, 2e-7);
+      approx(q.value[2], 0.3, 2e-7);
+    });
+
+    await test('六种四面体次序、权重和相等分量裁决', () => {
+      const cases = [
+        { f: [.7,.5,.2], id: 0 }, { f: [.7,.2,.5], id: 1 },
+        { f: [.5,.7,.2], id: 2 }, { f: [.2,.7,.5], id: 3 },
+        { f: [.5,.2,.7], id: 4 }, { f: [.2,.5,.7], id: 5 },
+        { f: [.5,.5,.2], id: 0 }, { f: [.5,.2,.5], id: 1 },
+        { f: [.5,.7,.5], id: 2 }, { f: [.2,.5,.5], id: 3 },
+        { f: [.5,.5,.7], id: 4 }, { f: [.5,.5,.5], id: 0 }
+      ];
+      cases.forEach(c => assert(tetraCase(c.f) === c.id,
+        `f=${c.f} 应得 ${c.id}，实际 ${tetraCase(c.f)}`));
+
+      const lut = scalarCornerLut();
+      cases.slice(0, 6).forEach(c => {
+        const order = TETRA_ORDERS[c.id];
+        const weights = tetraWeights(c.f, order);
+        const masks = tetraCornerMasks(order);
+        approx(weights.reduce((a,b)=>a+b,0), 1, 1e-12);
+        weights.forEach(w => assert(w >= -1e-12, '负权重'));
+        let expected = 0;
+        weights.forEach((w, k) => { expected += w * (masks[k] / 7); });
+        const got = tetraSampleLut(lut, c.f.map(v => v / 4)).value[0];
+        approx(got, expected, 1e-6);
+        assert(tetraSampleLut(lut, c.f.map(v => v / 4)).caseId === c.id, '分支编号不一致');
+      });
+    });
+
+    await test('小网格端到端进入六种四面体次序', () => {
+      const targets = [
+        [.175,.125,.050], [.175,.050,.125],
+        [.125,.175,.050], [.050,.175,.125],
+        [.125,.050,.175], [.050,.125,.175]
+      ];
+      const lut = makeIdentityLut();
+      targets.forEach((targetP3, id) => {
+        const linSrgb = matVec3(M_P3_TO_SRGB, targetP3);
+        const bytes = linSrgb.map(v => Math.round(srgbEncodeChannel(v) * 255));
+        const grid = { width: 1, height: 1, data: new Uint8ClampedArray([...bytes, 255]) };
+        const r = processGrid(grid, lut, [0, 0, 0]);
+        assert(r.stages.tetraCase[0] === id,
+          `小网格应进入次序 ${id}，实际 ${r.stages.tetraCase[0]}`);
+        const f = [r.stages.fraction[0], r.stages.fraction[1], r.stages.fraction[2]];
+        // 八位量化后仍应保持同一单元、同一排序，且非常接近目标小数部分。
+        f.forEach((v, c) => approx(v, targetP3[c] * 4, 0.016));
+      });
+    });
+
+    await test('LUT 域裁剪和上边界单元', () => {
+      const lut = makeIdentityLut();
+      const lo = tetraSampleLut(lut, [-2, -3, -4]);
+      lo.value.forEach(v => approx(v, 0, 1e-7));
+      const hi = tetraSampleLut(lut, [2, 3, 4]);
+      hi.value.forEach(v => approx(v, 1, 1e-7));
+      assert(hi.base.every(v => v === 3), '上边界应使用 base=3、fraction=1');
+      assert(hi.f.every(v => Math.abs(v - 1) < 1e-7), '上边界 fraction 应为 1');
+    });
+
+    await test('透明边界：alpha=0、1、1/255 都不预乘', () => {
+      const lut = makeIdentityLut();
+      const bg = [10, 20, 30];
+      const transparent = { width:1,height:1,data:new Uint8ClampedArray([255,0,0,0]) };
+      const opaque = { width:1,height:1,data:new Uint8ClampedArray([255,0,0,255]) };
+      const nearly = { width:1,height:1,data:new Uint8ClampedArray([255,0,0,1]) };
+      const rt = processGrid(transparent, lut, bg);
+      const ro = processGrid(opaque, lut, bg);
+      const rn = processGrid(nearly, lut, bg);
+      const bgExpected = bg.slice();
+      for (let c=0;c<3;c++) approx(rt.output[c], bgExpected[c], 0);
+      assert(ro.output[0] === 255 && ro.output[1] === 0 && ro.output[2] === 0, '不透明红错误');
+      const a = 1/255;
+      const redLin = srgbDecodeChannel(1);
+      for (let c=0;c<3;c++) {
+        const bglin = srgbDecodeChannel(bg[c]/255);
+        const expected = encodeByte(redLin * a + bglin * (1-a));
+        assert(Math.abs(rn.output[c] - expected) <= 0, 'alpha=1 合成错误');
+      }
+    });
+
+    await test('P3 红产生负色分量，合成前标记且合成后裁掉', () => {
+      const lut = makeConstantRedP3Lut();
+      const grid = { width:1,height:1,data:new Uint8ClampedArray([123,45,67,255]) };
+      const r = processGrid(grid, lut, [200,200,200]);
+      const back = [r.stages.backSrgb[0], r.stages.backSrgb[1], r.stages.backSrgb[2]];
+      assert(back[0] > 1 && back[1] < 0 && back[2] < 0, 'P3 红应得到 >1 R 和负 G/B');
+      assert(r.mask[0] === 1, '负色分量必须在合成前标记');
+      assert(r.output[0] === 255 && r.output[1] === 0 && r.output[2] === 0, '最终字节必须裁到合法范围');
+
+      const transparent = { width:1,height:1,data:new Uint8ClampedArray([123,45,67,0]) };
+      const rt = processGrid(transparent, lut, [200,200,200]);
+      assert(rt.mask[0] === 1, '完全透明像素的出界颜色仍应标记');
+      for (let c=0;c<3;c++) assert(rt.output[c] === 200, '透明像素最终应由背景决定');
+    });
+
+    if (renderer.gl) {
+      await test('CPU/WebGL2 随机网格与随机 LUT 每通道差不超过一级', () => {
+        const grid = randomGrid(31, 17, 909);
+        const lut = makeRandomLut(808);
+        const bg = [37, 91, 211];
+        const cpu = processGrid(grid, lut, bg);
+        const gpu = renderer.render(grid, lut, bg);
+        assert(gpu, 'GPU 未返回结果');
+        let max = 0, maskMismatch = 0;
+        for (let p=0;p<grid.width*grid.height;p++) {
+          const i=p*4;
+          for (let c=0;c<3;c++) max = Math.max(max, Math.abs(cpu.output[i+c]-gpu.data[i+c]));
+          if (cpu.mask[p] !== (gpu.data[i+3] ? 1 : 0)) ++maskMismatch;
+        }
+        assert(max <= 1, `最大差 ${max} > 1`);
+        assert(maskMismatch === 0, `${maskMismatch} 个出界标记不一致`);
+        const covered = new Set(Array.from(cpu.stages.tetraCase));
+        for (let id = 0; id < 6; ++id) {
+          assert(covered.has(id), `随机网格未覆盖四面体次序 ${id}`);
+        }
+      });
+
+      await test('上下文丢失时返回空预览，恢复后按当前参数重建', async () => {
+        const oldBg = state.bg.slice();
+        const oldGrid = state.grid;
+        const oldLut = state.lut;
+        const grid = randomGrid(7, 5, 303);
+        const lut = makeRandomLut(404);
+        const bgBefore = [12, 34, 56];
+        const bgAfter = [210, 17, 189];
+
+        state.grid = grid; state.lut = lut; state.bg = bgBefore;
+        runProcessor('context test before loss');
+        assert(renderer.available && !!state.gpu, '丢失前应存在 GPU 结果');
+
+        const lostPromise = nextEvent(els.glCanvas, 'webglcontextlost');
+        assert(renderer.lose(), '无法请求上下文丢失');
+        await lostPromise;
+        assert(renderer.lost, 'renderer 应标记 lost');
+        assert(state.gpu === null, '旧 GPU 结果必须清空');
+        assert(els.shell.dataset.lost === 'true', '必须显示预览不可用遮罩');
+        assert(renderer.render(grid, lut, bgBefore) === null, '丢失期间不得渲染旧图');
+
+        state.bg = bgAfter;
+        const restoredPromise = nextEvent(els.glCanvas, 'webglcontextrestored');
+        assert(renderer.restore(), '无法请求恢复');
+        await restoredPromise;
+        assert(!renderer.lost, '恢复后标记应清除');
+        assert(!!state.gpu, '恢复后应自动重建 GPU 结果');
+        const cpu = processGrid(grid, lut, bgAfter);
+        let max = 0;
+        for (let i=0;i<grid.width*grid.height*4;i+=4) {
+          for (let c=0;c<3;c++) max = Math.max(max, Math.abs(cpu.output[i+c]-state.gpu.data[i+c]));
+        }
+        assert(max <= 1, `恢复后最大差 ${max} > 1`);
+        assert(els.shell.dataset.lost === 'false', '恢复后不可继续遮挡预览');
+
+        state.grid = oldGrid; state.lut = oldLut; state.bg = oldBg;
+        els.bgColor.value = bytesToHex(oldBg);
+        runProcessor('context test cleanup');
+      });
+    } else {
+      skip('CPU/WebGL2 一级差测试', 'WebGL2 不可用');
+      skip('上下文恢复测试', 'WebGL2 不可用');
+    }
+
+    log(`\n结果：${passed} 通过，${failed} 失败，${skipped} 跳过。`);
+    return { passed, failed, skipped, text: lines.join('\n') };
+  }
+  return { run };
+}
+
+els.runTests.addEventListener('click', async () => {
+  els.testOutput.textContent = '运行中……';
+  const suite = createTestSuite();
+  const result = await suite.run();
+  els.testOutput.textContent = result.text;
+});
+
+/* ============================================================
+ * 启动
+ * ============================================================ */
+
+els.gridInput.value = gridToJson(state.grid);
+els.lutInput.value = lutToJson(state.lut);
+els.bgBytes.textContent = `RGB ${bytes3(state.bg)}`;
+initGlStatus();
+runProcessor('initial load');
+
+// 供浏览器控制台或外部测试脚本调用。
+window.Proof = {
+  M_SRGB_TO_P3, M_P3_TO_SRGB,
+  srgbDecodeChannel, srgbEncodeChannel, encodeByte,
+  lutIndex, fetchLut, tetraCase, TETRA_ORDERS,
+  tetraSampleLut, processGrid, parseGrid, parseLut,
+  makeDefaultGrid, makeIdentityLut, makeAxisSwapLut,
+  makeConstantRedP3Lut, makeRandomLut,
+  WebGLProofRenderer
+};
+</script>
+</body>
+</html>
